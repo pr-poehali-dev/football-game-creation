@@ -419,19 +419,25 @@ const Index = () => {
           const dy = newY - player.y;
           const dist = Math.sqrt(dx * dx + dy * dy);
           
-          if (dist < 25) {
-            if (!prev.owner || prev.owner !== player.id) {
-              const kickAngle = Math.atan2(dy, dx);
-              const kickSpeed = 5;
-              newVx = -Math.cos(kickAngle) * kickSpeed;
-              newVy = -Math.sin(kickAngle) * kickSpeed;
-              newOwner = null;
-              
-              setPlayers(prevPlayers => prevPlayers.map(p => ({
-                ...p,
-                hasBall: false
-              })));
-            }
+          if (dist < 25 && Math.abs(newVx) < 0.5 && Math.abs(newVy) < 0.5) {
+            const oppGoalX = player.team === 'ГЕНГ БЕНГ' ? 780 : 20;
+            const oppGoalY = 250;
+            
+            const toGoalX = oppGoalX - newX;
+            const toGoalY = oppGoalY - newY;
+            const kickAngle = Math.atan2(toGoalY, toGoalX);
+            
+            const randomOffset = (Math.random() - 0.5) * 0.5;
+            const kickSpeed = 6 + Math.random() * 2;
+            
+            newVx = Math.cos(kickAngle + randomOffset) * kickSpeed;
+            newVy = Math.sin(kickAngle + randomOffset) * kickSpeed;
+            newOwner = null;
+            
+            setPlayers(prevPlayers => prevPlayers.map(p => ({
+              ...p,
+              hasBall: false
+            })));
           }
         });
 
