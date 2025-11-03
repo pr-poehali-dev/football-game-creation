@@ -366,10 +366,10 @@ const Index = () => {
 
         let newX = prev.x + prev.vx;
         let newY = prev.y + prev.vy;
-        let newVx = prev.vx * 0.97;
-        let newVy = prev.vy * 0.97;
+        let newVx = prev.vx * 0.98;
+        let newVy = prev.vy * 0.98;
 
-        if (Math.abs(newVx) < 0.1 && Math.abs(newVy) < 0.1) {
+        if (Math.abs(newVx) < 0.05 && Math.abs(newVy) < 0.05) {
           newVx = 0;
           newVy = 0;
         }
@@ -419,12 +419,19 @@ const Index = () => {
           const dy = newY - player.y;
           const dist = Math.sqrt(dx * dx + dy * dy);
           
-          if (dist < 20 && !prev.owner) {
-            newOwner = player.id;
-            setPlayers(prevPlayers => prevPlayers.map(p => ({
-              ...p,
-              hasBall: p.id === player.id
-            })));
+          if (dist < 25) {
+            if (!prev.owner || prev.owner !== player.id) {
+              const kickAngle = Math.atan2(dy, dx);
+              const kickSpeed = 5;
+              newVx = -Math.cos(kickAngle) * kickSpeed;
+              newVy = -Math.sin(kickAngle) * kickSpeed;
+              newOwner = null;
+              
+              setPlayers(prevPlayers => prevPlayers.map(p => ({
+                ...p,
+                hasBall: false
+              })));
+            }
           }
         });
 
