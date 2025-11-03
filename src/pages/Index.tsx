@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import Icon from '@/components/ui/icon';
+import { toast } from '@/components/ui/use-toast';
 
 const teams = {
   'ГЕНГ БЕНГ': [
@@ -38,6 +39,8 @@ interface Player {
   role: 'goalkeeper' | 'defender' | 'midfielder' | 'attacker';
   targetX?: number;
   targetY?: number;
+  hasBall: boolean;
+  stamina: number;
 }
 
 interface Ball {
@@ -45,12 +48,13 @@ interface Ball {
   y: number;
   vx: number;
   vy: number;
+  owner: string | null;
 }
 
 const difficultySettings = {
-  'хуйня': { speed: 1.2, reaction: 0.3, teamwork: 0.2 },
-  'бля ну будет трудно': { speed: 2.0, reaction: 0.6, teamwork: 0.5 },
-  'пиздец сложный': { speed: 3.5, reaction: 0.9, teamwork: 0.8 }
+  'хуйня': { speed: 1.8, reaction: 0.4, teamwork: 0.3, accuracy: 0.3 },
+  'бля ну будет трудно': { speed: 2.5, reaction: 0.7, teamwork: 0.6, accuracy: 0.6 },
+  'пиздец сложный': { speed: 3.5, reaction: 0.95, teamwork: 0.9, accuracy: 0.85 }
 };
 
 const Index = () => {
@@ -60,7 +64,9 @@ const Index = () => {
   const [difficulty, setDifficulty] = useState<Difficulty>('хуйня');
   const [score, setScore] = useState({ 'ГЕНГ БЕНГ': 0, 'Преподаватели': 0 });
   const [players, setPlayers] = useState<Player[]>([]);
-  const [ball, setBall] = useState<Ball>({ x: 400, y: 250, vx: 0, vy: 0 });
+  const [ball, setBall] = useState<Ball>({ x: 400, y: 250, vx: 0, vy: 0, owner: null });
+  const [matchTime, setMatchTime] = useState(0);
+  const [halfTime, setHalfTime] = useState(1);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const keysPressed = useRef<Set<string>>(new Set());
 
@@ -81,64 +87,76 @@ const Index = () => {
     
     teams['ГЕНГ БЕНГ'].forEach((name, idx) => {
       const role = assignRole(name, 'ГЕНГ БЕНГ');
-      let baseX = 100;
+      let baseX = 150;
       let baseY = 80 + (idx % 3) * 140 + Math.random() * 40;
       
       if (role === 'goalkeeper') {
-        baseX = 40;
+        baseX = 50;
         baseY = 250;
       } else if (role === 'defender') {
-        baseX = 120;
+        baseX = 150;
+        baseY = 150 + (idx % 2) * 200;
       } else if (role === 'midfielder') {
-        baseX = 250;
+        baseX = 280;
+        baseY = 120 + (idx % 3) * 120;
       } else if (role === 'attacker') {
-        baseX = 350;
+        baseX = 380;
+        baseY = 180 + (idx % 2) * 140;
       }
       
       allPlayers.push({
         id: `gb-${idx}`,
         name,
         team: 'ГЕНГ БЕНГ',
-        x: baseX + (role === 'goalkeeper' ? 0 : (Math.random() - 0.5) * 60),
+        x: baseX + (role === 'goalkeeper' ? 0 : (Math.random() - 0.5) * 30),
         y: baseY,
         vx: 0,
         vy: 0,
         isUser: team === 'ГЕНГ БЕНГ' && name === playerName,
-        role
+        role,
+        hasBall: false,
+        stamina: 100
       });
     });
 
     teams['Преподаватели'].forEach((name, idx) => {
       const role = assignRole(name, 'Преподаватели');
-      let baseX = 700;
+      let baseX = 650;
       let baseY = 80 + (idx % 3) * 140 + Math.random() * 40;
       
       if (role === 'goalkeeper') {
-        baseX = 760;
+        baseX = 750;
         baseY = 250;
       } else if (role === 'defender') {
-        baseX = 680;
+        baseX = 650;
+        baseY = 150 + (idx % 2) * 200;
       } else if (role === 'midfielder') {
-        baseX = 550;
+        baseX = 520;
+        baseY = 120 + (idx % 3) * 120;
       } else if (role === 'attacker') {
-        baseX = 450;
+        baseX = 420;
+        baseY = 180 + (idx % 2) * 140;
       }
       
       allPlayers.push({
         id: `prep-${idx}`,
         name,
         team: 'Преподаватели',
-        x: baseX + (role === 'goalkeeper' ? 0 : (Math.random() - 0.5) * 60),
+        x: baseX + (role === 'goalkeeper' ? 0 : (Math.random() - 0.5) * 30),
         y: baseY,
         vx: 0,
         vy: 0,
         isUser: team === 'Преподаватели' && name === playerName,
-        role
+        role,
+        hasBall: false,
+        stamina: 100
       });
     });
 
     setPlayers(allPlayers);
-    setBall({ x: 400, y: 250, vx: Math.random() * 2 - 1, vy: Math.random() * 2 - 1 });
+    setBall({ x: 400, y: 250, vx: 0, vy: 0, owner: null });
+    setMatchTime(0);
+    setHalfTime(1);
   };
 
   useEffect(() => {
@@ -162,68 +180,149 @@ const Index = () => {
   useEffect(() => {
     if (gameState !== 'playing') return;
 
+    const timeInterval = setInterval(() => {
+      setMatchTime(prev => {
+        const newTime = prev + 1;
+        if (newTime === 45 && halfTime === 1) {
+          toast({
+            title: "Первый тайм окончен!",
+            description: "Начинается второй тайм"
+          });
+          setHalfTime(2);
+        }
+        if (newTime === 90) {
+          toast({
+            title: "Матч окончен!",
+            description: `Итоговый счёт: ${score['ГЕНГ БЕНГ']} - ${score['Преподаватели']}`
+          });
+        }
+        return newTime;
+      });
+    }, 1000);
+
+    return () => clearInterval(timeInterval);
+  }, [gameState, halfTime, score]);
+
+  useEffect(() => {
+    if (gameState !== 'playing' || matchTime >= 90) return;
+
     const settings = difficultySettings[difficulty];
 
     const gameLoop = setInterval(() => {
       setPlayers(prev => prev.map(player => {
+        const newStamina = Math.max(0, player.stamina - 0.01);
+        
         if (player.isUser) {
           let newVx = 0;
           let newVy = 0;
+          const sprintMultiplier = keysPressed.current.has('shift') ? 1.5 : 1;
+          const speedFactor = (newStamina / 100) * 0.5 + 0.5;
           
-          if (keysPressed.current.has('w') || keysPressed.current.has('ц')) newVy = -4;
-          if (keysPressed.current.has('s') || keysPressed.current.has('ы')) newVy = 4;
-          if (keysPressed.current.has('a') || keysPressed.current.has('ф')) newVx = -4;
-          if (keysPressed.current.has('d') || keysPressed.current.has('в')) newVx = 4;
+          if (keysPressed.current.has('w') || keysPressed.current.has('ц')) newVy = -4 * sprintMultiplier * speedFactor;
+          if (keysPressed.current.has('s') || keysPressed.current.has('ы')) newVy = 4 * sprintMultiplier * speedFactor;
+          if (keysPressed.current.has('a') || keysPressed.current.has('ф')) newVx = -4 * sprintMultiplier * speedFactor;
+          if (keysPressed.current.has('d') || keysPressed.current.has('в')) newVx = 4 * sprintMultiplier * speedFactor;
+
+          if (keysPressed.current.has(' ') && player.hasBall) {
+            const oppGoalX = player.team === 'ГЕНГ БЕНГ' ? 780 : 20;
+            const oppGoalY = 250;
+            const angle = Math.atan2(oppGoalY - player.y, oppGoalX - player.x);
+            
+            setBall(prev => ({
+              ...prev,
+              vx: Math.cos(angle) * 8,
+              vy: Math.sin(angle) * 8,
+              owner: null
+            }));
+          }
 
           return {
             ...player,
             x: Math.max(20, Math.min(780, player.x + newVx)),
             y: Math.max(20, Math.min(480, player.y + newVy)),
             vx: newVx,
-            vy: newVy
+            vy: newVy,
+            stamina: sprintMultiplier > 1 ? Math.max(0, newStamina - 0.05) : Math.min(100, newStamina + 0.02)
           };
         } else {
           const toBallX = ball.x - player.x;
           const toBallY = ball.y - player.y;
           const distToBall = Math.sqrt(toBallX * toBallX + toBallY * toBallY);
 
-          const oppTeam = player.team === 'ГЕНГ БЕНГ' ? 'Преподаватели' : 'ГЕНГ БЕНГ';
           const oppGoalX = player.team === 'ГЕНГ БЕНГ' ? 780 : 20;
           const ownGoalX = player.team === 'ГЕНГ БЕНГ' ? 20 : 780;
 
           let targetX = player.x;
           let targetY = player.y;
+          let speedMultiplier = 1;
 
           if (player.role === 'goalkeeper') {
-            const goalX = player.team === 'ГЕНГ БЕНГ' ? 40 : 760;
-            const goalTop = 200;
-            const goalBottom = 300;
+            const goalX = player.team === 'ГЕНГ БЕНГ' ? 50 : 750;
+            const goalTop = 180;
+            const goalBottom = 320;
             
-            if (distToBall < 200 && ((player.team === 'ГЕНГ БЕНГ' && ball.x < 250) || (player.team === 'Преподаватели' && ball.x > 550))) {
+            if (distToBall < 250 && ((player.team === 'ГЕНГ БЕНГ' && ball.x < 300) || (player.team === 'Преподаватели' && ball.x > 500))) {
               targetX = Math.max(30, Math.min(770, ball.x));
               targetY = Math.max(goalTop, Math.min(goalBottom, ball.y));
+              speedMultiplier = 2.5;
+              
+              if (distToBall < 30) {
+                setBall(prev => ({
+                  ...prev,
+                  vx: prev.vx * -0.5,
+                  vy: (Math.random() - 0.5) * 6,
+                  owner: null
+                }));
+              }
             } else {
               targetX = goalX;
               targetY = 250;
             }
+          } else if (ball.owner === player.id) {
+            const teammatesInFront = prev.filter(p => 
+              p.team === player.team && 
+              p.id !== player.id &&
+              (player.team === 'ГЕНГ БЕНГ' ? p.x > player.x : p.x < player.x)
+            );
+
+            if (teammatesInFront.length > 0 && Math.random() < settings.teamwork) {
+              const target = teammatesInFront[Math.floor(Math.random() * teammatesInFront.length)];
+              const passAngle = Math.atan2(target.y - player.y, target.x - player.x);
+              setBall(prev => ({
+                ...prev,
+                vx: Math.cos(passAngle) * 6,
+                vy: Math.sin(passAngle) * 6,
+                owner: null
+              }));
+            } else {
+              targetX = oppGoalX + (player.team === 'ГЕНГ БЕНГ' ? -50 : 50);
+              targetY = 250;
+              
+              const distToGoal = Math.sqrt((oppGoalX - player.x) ** 2 + (250 - player.y) ** 2);
+              if (distToGoal < 200 && Math.random() < settings.accuracy) {
+                const shootAngle = Math.atan2(250 - player.y, oppGoalX - player.x);
+                setBall(prev => ({
+                  ...prev,
+                  vx: Math.cos(shootAngle) * 9,
+                  vy: Math.sin(shootAngle) * 9,
+                  owner: null
+                }));
+              }
+            }
           } else if (distToBall < 150 * settings.reaction) {
             targetX = ball.x;
             targetY = ball.y;
+            speedMultiplier = 1.5;
           } else {
             if (player.role === 'defender') {
-              targetX = ownGoalX + (player.team === 'ГЕНГ БЕНГ' ? 150 : -150);
-              targetY = 250 + (ball.y - 250) * 0.5;
+              targetX = ownGoalX + (player.team === 'ГЕНГ БЕНГ' ? 180 : -180);
+              targetY = 250 + (ball.y - 250) * 0.6;
             } else if (player.role === 'midfielder') {
-              targetX = 400 + (ball.x - 400) * 0.6;
+              targetX = 400 + (ball.x - 400) * 0.7;
               targetY = ball.y;
             } else {
-              if (distToBall < 100) {
-                targetX = ball.x;
-                targetY = ball.y;
-              } else {
-                targetX = oppGoalX + (player.team === 'ГЕНГ БЕНГ' ? -100 : 100);
-                targetY = 250 + Math.sin(Date.now() / 1000 + player.id.charCodeAt(0)) * 80;
-              }
+              targetX = oppGoalX + (player.team === 'ГЕНГ БЕНГ' ? -120 : 120);
+              targetY = 250 + Math.sin(Date.now() / 1000 + player.id.charCodeAt(0)) * 100;
             }
           }
 
@@ -231,8 +330,9 @@ const Index = () => {
           const dy = targetY - player.y;
           const dist = Math.sqrt(dx * dx + dy * dy);
 
-          if (dist > 10) {
-            const speed = settings.speed;
+          if (dist > 5) {
+            const speedFactor = (newStamina / 100) * 0.5 + 0.5;
+            const speed = settings.speed * speedMultiplier * speedFactor;
             const moveX = (dx / dist) * speed;
             const moveY = (dy / dist) * speed;
 
@@ -242,78 +342,98 @@ const Index = () => {
               y: Math.max(20, Math.min(480, player.y + moveY)),
               vx: moveX,
               vy: moveY,
-              targetX,
-              targetY
+              stamina: speedMultiplier > 1 ? Math.max(0, newStamina - 0.03) : Math.min(100, newStamina + 0.01)
             };
           }
 
-          return player;
+          return { ...player, stamina: Math.min(100, newStamina + 0.02) };
         }
       }));
 
       setBall(prev => {
+        if (prev.owner) {
+          const owner = players.find(p => p.id === prev.owner);
+          if (owner) {
+            return {
+              ...prev,
+              x: owner.x,
+              y: owner.y,
+              vx: 0,
+              vy: 0
+            };
+          }
+        }
+
         let newX = prev.x + prev.vx;
         let newY = prev.y + prev.vy;
-        let newVx = prev.vx * 0.99;
-        let newVy = prev.vy * 0.99;
+        let newVx = prev.vx * 0.97;
+        let newVy = prev.vy * 0.97;
+
+        if (Math.abs(newVx) < 0.1 && Math.abs(newVy) < 0.1) {
+          newVx = 0;
+          newVy = 0;
+        }
 
         if (newY <= 20 || newY >= 480) {
-          newVy = -newVy * 0.8;
+          newVy = -newVy * 0.7;
           newY = Math.max(20, Math.min(480, newY));
         }
 
         if (newX <= 20) {
-          if (newY > 200 && newY < 300) {
+          if (newY > 180 && newY < 320) {
             setScore(s => ({ ...s, 'Преподаватели': s['Преподаватели'] + 1 }));
+            toast({
+              title: "ГОЛ! 🎉",
+              description: "Команда Преподаватели забила!"
+            });
             setTimeout(() => {
-              setBall({ x: 400, y: 250, vx: Math.random() * 2 - 1, vy: Math.random() * 2 - 1 });
+              setBall({ x: 400, y: 250, vx: 0, vy: 0, owner: null });
             }, 100);
-            return { x: 400, y: 250, vx: 0, vy: 0 };
+            return { x: 400, y: 250, vx: 0, vy: 0, owner: null };
           } else {
-            newVx = -newVx * 0.8;
+            newVx = -newVx * 0.7;
             newX = 20;
           }
         }
 
         if (newX >= 780) {
-          if (newY > 200 && newY < 300) {
+          if (newY > 180 && newY < 320) {
             setScore(s => ({ ...s, 'ГЕНГ БЕНГ': s['ГЕНГ БЕНГ'] + 1 }));
+            toast({
+              title: "ГОЛ! 🎉",
+              description: "Команда ГЕНГ БЕНГ забила!"
+            });
             setTimeout(() => {
-              setBall({ x: 400, y: 250, vx: Math.random() * 2 - 1, vy: Math.random() * 2 - 1 });
+              setBall({ x: 400, y: 250, vx: 0, vy: 0, owner: null });
             }, 100);
-            return { x: 400, y: 250, vx: 0, vy: 0 };
+            return { x: 400, y: 250, vx: 0, vy: 0, owner: null };
           } else {
-            newVx = -newVx * 0.8;
+            newVx = -newVx * 0.7;
             newX = 780;
           }
         }
 
+        let newOwner = prev.owner;
         players.forEach(player => {
           const dx = newX - player.x;
           const dy = newY - player.y;
           const dist = Math.sqrt(dx * dx + dy * dy);
           
-          if (dist < 25) {
-            const angle = Math.atan2(dy, dx);
-            const kickPower = player.isUser ? 6 : (4 + settings.speed * 0.5);
-            
-            const oppGoalX = player.team === 'ГЕНГ БЕНГ' ? 780 : 20;
-            const oppGoalY = 250;
-            const toGoalAngle = Math.atan2(oppGoalY - player.y, oppGoalX - player.x);
-            
-            const finalAngle = player.isUser ? angle : (angle * 0.3 + toGoalAngle * 0.7 * settings.teamwork);
-            
-            newVx = Math.cos(finalAngle) * kickPower + player.vx * 0.3;
-            newVy = Math.sin(finalAngle) * kickPower + player.vy * 0.3;
+          if (dist < 20 && !prev.owner) {
+            newOwner = player.id;
+            setPlayers(prevPlayers => prevPlayers.map(p => ({
+              ...p,
+              hasBall: p.id === player.id
+            })));
           }
         });
 
-        return { x: newX, y: newY, vx: newVx, vy: newVy };
+        return { x: newX, y: newY, vx: newVx, vy: newVy, owner: newOwner };
       });
     }, 1000 / 60);
 
     return () => clearInterval(gameLoop);
-  }, [gameState, players, ball, difficulty]);
+  }, [gameState, players, ball, difficulty, matchTime]);
 
   useEffect(() => {
     if (gameState !== 'playing') return;
@@ -326,28 +446,47 @@ const Index = () => {
 
     ctx.clearRect(0, 0, 800, 500);
 
-    ctx.fillStyle = '#2d5016';
+    const fieldGradient = ctx.createLinearGradient(0, 0, 0, 500);
+    fieldGradient.addColorStop(0, '#2d5016');
+    fieldGradient.addColorStop(0.5, '#336b1f');
+    fieldGradient.addColorStop(1, '#2d5016');
+    ctx.fillStyle = fieldGradient;
     ctx.fillRect(0, 0, 800, 500);
 
     for (let i = 0; i < 500; i += 40) {
-      ctx.fillStyle = i % 80 === 0 ? '#2d5016' : '#336b1f';
+      ctx.fillStyle = i % 80 === 0 ? 'rgba(45, 80, 22, 0.3)' : 'rgba(51, 107, 31, 0.3)';
       ctx.fillRect(0, i, 800, 40);
     }
 
     ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 3;
     ctx.strokeRect(0, 0, 800, 500);
+    
     ctx.beginPath();
     ctx.moveTo(400, 0);
     ctx.lineTo(400, 500);
     ctx.stroke();
+    
     ctx.beginPath();
-    ctx.arc(400, 250, 60, 0, Math.PI * 2);
+    ctx.arc(400, 250, 70, 0, Math.PI * 2);
     ctx.stroke();
+    
+    ctx.beginPath();
+    ctx.arc(400, 250, 5, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
 
-    ctx.fillStyle = '#1a1a1a';
-    ctx.fillRect(0, 180, 30, 140);
-    ctx.fillRect(770, 180, 30, 140);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(0, 180, 60, 140);
+    ctx.strokeRect(740, 180, 60, 140);
+    
+    ctx.strokeRect(0, 210, 25, 80);
+    ctx.strokeRect(775, 210, 25, 80);
+
+    ctx.fillStyle = 'rgba(26, 26, 26, 0.8)';
+    ctx.fillRect(0, 180, 3, 140);
+    ctx.fillRect(797, 180, 3, 140);
 
     players.forEach(player => {
       const gradient = ctx.createRadialGradient(player.x, player.y - 5, 5, player.x, player.y - 5, 20);
@@ -371,8 +510,18 @@ const Index = () => {
         ctx.strokeStyle = '#ffff00';
         ctx.lineWidth = 3;
         ctx.beginPath();
-        ctx.arc(player.x, player.y, 20, 0, Math.PI * 2);
+        ctx.arc(player.x, player.y, 21, 0, Math.PI * 2);
         ctx.stroke();
+      }
+
+      if (player.hasBall) {
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.arc(player.x, player.y, 25, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
       }
 
       ctx.font = '10px Roboto';
@@ -385,20 +534,43 @@ const Index = () => {
       const displayName = nameParts.length > 1 
         ? `${nameParts[0][0]}. ${nameParts[1]}` 
         : player.name;
-      ctx.strokeText(displayName, player.x, player.y + 22);
-      ctx.fillText(displayName, player.x, player.y + 22);
+      ctx.strokeText(displayName, player.x, player.y + 24);
+      ctx.fillText(displayName, player.x, player.y + 24);
+
+      const staminaWidth = 30;
+      const staminaHeight = 4;
+      const staminaX = player.x - staminaWidth / 2;
+      const staminaY = player.y - 28;
+      
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      ctx.fillRect(staminaX, staminaY, staminaWidth, staminaHeight);
+      
+      const staminaColor = player.stamina > 60 ? '#22c55e' : player.stamina > 30 ? '#f59e0b' : '#ef4444';
+      ctx.fillStyle = staminaColor;
+      ctx.fillRect(staminaX, staminaY, staminaWidth * (player.stamina / 100), staminaHeight);
     });
 
-    const ballGradient = ctx.createRadialGradient(ball.x - 3, ball.y - 3, 2, ball.x, ball.y, 12);
-    ballGradient.addColorStop(0, '#ffffff');
-    ballGradient.addColorStop(1, '#e0e0e0');
-    ctx.fillStyle = ballGradient;
-    ctx.beginPath();
-    ctx.arc(ball.x, ball.y, 10, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 1;
-    ctx.stroke();
+    if (!ball.owner) {
+      const ballGradient = ctx.createRadialGradient(ball.x - 3, ball.y - 3, 2, ball.x, ball.y, 12);
+      ballGradient.addColorStop(0, '#ffffff');
+      ballGradient.addColorStop(1, '#e0e0e0');
+      ctx.fillStyle = ballGradient;
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, 10, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      
+      ctx.strokeStyle = '#333333';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(ball.x - 7, ball.y - 7);
+      ctx.lineTo(ball.x + 7, ball.y + 7);
+      ctx.moveTo(ball.x - 7, ball.y + 7);
+      ctx.lineTo(ball.x + 7, ball.y - 7);
+      ctx.stroke();
+    }
   }, [players, ball, gameState]);
 
   const handleTeamSelect = (team: TeamName) => {
@@ -572,6 +744,12 @@ const Index = () => {
     );
   }
 
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
   return (
     <div className="min-h-screen bg-black text-white flex flex-col">
       <div className="absolute top-8 left-8 text-sm tracking-wider z-10">
@@ -583,7 +761,9 @@ const Index = () => {
 
       <div className="text-center mt-16 mb-4">
         <div className="text-lg tracking-[0.3em]">ГЕНГ БЕНГ - 27.10.2025 - 30.10.2025</div>
-        <div className="text-sm text-muted-foreground mt-1">Сложность: {difficulty}</div>
+        <div className="text-sm text-muted-foreground mt-1">
+          {halfTime === 1 ? 'Первый тайм' : 'Второй тайм'} | {formatTime(matchTime)} | Сложность: {difficulty}
+        </div>
       </div>
 
       <div className="flex items-center justify-center gap-12 mb-4">
@@ -607,7 +787,7 @@ const Index = () => {
             className="border-4 border-primary/30 rounded-lg shadow-2xl"
           />
           <div className="absolute -bottom-12 left-0 right-0 text-center text-sm text-muted-foreground">
-            Управление: W/A/S/D или Ц/Ф/Ы/В
+            Управление: W/A/S/D (Shift - спринт, Пробел - удар)
           </div>
         </div>
       </div>
