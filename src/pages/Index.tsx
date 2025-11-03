@@ -24,6 +24,7 @@ const teams = {
 };
 
 type TeamName = keyof typeof teams;
+type Difficulty = 'хуйня' | 'бля ну будет трудно' | 'пиздец сложный';
 
 interface Player {
   id: string;
@@ -34,6 +35,9 @@ interface Player {
   vx: number;
   vy: number;
   isUser: boolean;
+  role: 'defender' | 'midfielder' | 'attacker';
+  targetX?: number;
+  targetY?: number;
 }
 
 interface Ball {
@@ -43,47 +47,78 @@ interface Ball {
   vy: number;
 }
 
+const difficultySettings = {
+  'хуйня': { speed: 1.2, reaction: 0.3, teamwork: 0.2 },
+  'бля ну будет трудно': { speed: 2.0, reaction: 0.6, teamwork: 0.5 },
+  'пиздец сложный': { speed: 3.5, reaction: 0.9, teamwork: 0.8 }
+};
+
 const Index = () => {
-  const [gameState, setGameState] = useState<'team-select' | 'player-select' | 'playing'>('team-select');
+  const [gameState, setGameState] = useState<'team-select' | 'player-select' | 'difficulty-select' | 'playing'>('team-select');
   const [selectedTeam, setSelectedTeam] = useState<TeamName | null>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<string | null>(null);
+  const [difficulty, setDifficulty] = useState<Difficulty>('хуйня');
   const [score, setScore] = useState({ 'ГЕНГ БЕНГ': 0, 'Преподаватели': 0 });
   const [players, setPlayers] = useState<Player[]>([]);
   const [ball, setBall] = useState<Ball>({ x: 400, y: 250, vx: 0, vy: 0 });
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const keysPressed = useRef<Set<string>>(new Set());
 
+  const assignRoles = (teamPlayers: string[]): ('defender' | 'midfielder' | 'attacker')[] => {
+    const roles: ('defender' | 'midfielder' | 'attacker')[] = [];
+    teamPlayers.forEach((_, idx) => {
+      if (idx < 2) roles.push('defender');
+      else if (idx < 5) roles.push('midfielder');
+      else roles.push('attacker');
+    });
+    return roles;
+  };
+
   const initGame = (team: TeamName, playerName: string) => {
     const allPlayers: Player[] = [];
+    const gbRoles = assignRoles(teams['ГЕНГ БЕНГ']);
+    const prepRoles = assignRoles(teams['Преподаватели']);
     
     teams['ГЕНГ БЕНГ'].forEach((name, idx) => {
+      const role = gbRoles[idx];
+      let baseX = 100;
+      if (role === 'midfielder') baseX = 250;
+      if (role === 'attacker') baseX = 350;
+      
       allPlayers.push({
         id: `gb-${idx}`,
         name,
         team: 'ГЕНГ БЕНГ',
-        x: 100 + (idx % 4) * 80,
-        y: 100 + Math.floor(idx / 4) * 120,
+        x: baseX + (Math.random() - 0.5) * 60,
+        y: 80 + (idx % 3) * 140 + Math.random() * 40,
         vx: 0,
         vy: 0,
-        isUser: team === 'ГЕНГ БЕНГ' && name === playerName
+        isUser: team === 'ГЕНГ БЕНГ' && name === playerName,
+        role
       });
     });
 
     teams['Преподаватели'].forEach((name, idx) => {
+      const role = prepRoles[idx];
+      let baseX = 700;
+      if (role === 'midfielder') baseX = 550;
+      if (role === 'attacker') baseX = 450;
+      
       allPlayers.push({
         id: `prep-${idx}`,
         name,
         team: 'Преподаватели',
-        x: 600 + (idx % 4) * 80,
-        y: 100 + Math.floor(idx / 4) * 120,
+        x: baseX + (Math.random() - 0.5) * 60,
+        y: 80 + (idx % 3) * 140 + Math.random() * 40,
         vx: 0,
         vy: 0,
-        isUser: team === 'Преподаватели' && name === playerName
+        isUser: team === 'Преподаватели' && name === playerName,
+        role
       });
     });
 
     setPlayers(allPlayers);
-    setBall({ x: 400, y: 250, vx: 0, vy: 0 });
+    setBall({ x: 400, y: 250, vx: Math.random() * 2 - 1, vy: Math.random() * 2 - 1 });
   };
 
   useEffect(() => {
@@ -107,16 +142,18 @@ const Index = () => {
   useEffect(() => {
     if (gameState !== 'playing') return;
 
+    const settings = difficultySettings[difficulty];
+
     const gameLoop = setInterval(() => {
       setPlayers(prev => prev.map(player => {
         if (player.isUser) {
           let newVx = 0;
           let newVy = 0;
           
-          if (keysPressed.current.has('w') || keysPressed.current.has('ц')) newVy = -3;
-          if (keysPressed.current.has('s') || keysPressed.current.has('ы')) newVy = 3;
-          if (keysPressed.current.has('a') || keysPressed.current.has('ф')) newVx = -3;
-          if (keysPressed.current.has('d') || keysPressed.current.has('в')) newVx = 3;
+          if (keysPressed.current.has('w') || keysPressed.current.has('ц')) newVy = -4;
+          if (keysPressed.current.has('s') || keysPressed.current.has('ы')) newVy = 4;
+          if (keysPressed.current.has('a') || keysPressed.current.has('ф')) newVx = -4;
+          if (keysPressed.current.has('d') || keysPressed.current.has('в')) newVx = 4;
 
           return {
             ...player,
@@ -128,19 +165,56 @@ const Index = () => {
         } else {
           const toBallX = ball.x - player.x;
           const toBallY = ball.y - player.y;
-          const dist = Math.sqrt(toBallX * toBallX + toBallY * toBallY);
-          
-          if (dist > 50) {
-            const speed = 1.5;
+          const distToBall = Math.sqrt(toBallX * toBallX + toBallY * toBallY);
+
+          const oppTeam = player.team === 'ГЕНГ БЕНГ' ? 'Преподаватели' : 'ГЕНГ БЕНГ';
+          const oppGoalX = player.team === 'ГЕНГ БЕНГ' ? 780 : 20;
+          const ownGoalX = player.team === 'ГЕНГ БЕНГ' ? 20 : 780;
+
+          let targetX = player.x;
+          let targetY = player.y;
+
+          if (distToBall < 150 * settings.reaction) {
+            targetX = ball.x;
+            targetY = ball.y;
+          } else {
+            if (player.role === 'defender') {
+              targetX = ownGoalX + (player.team === 'ГЕНГ БЕНГ' ? 150 : -150);
+              targetY = 250 + (ball.y - 250) * 0.5;
+            } else if (player.role === 'midfielder') {
+              targetX = 400 + (ball.x - 400) * 0.6;
+              targetY = ball.y;
+            } else {
+              if (distToBall < 100) {
+                targetX = ball.x;
+                targetY = ball.y;
+              } else {
+                targetX = oppGoalX + (player.team === 'ГЕНГ БЕНГ' ? -100 : 100);
+                targetY = 250 + Math.sin(Date.now() / 1000 + player.id.charCodeAt(0)) * 80;
+              }
+            }
+          }
+
+          const dx = targetX - player.x;
+          const dy = targetY - player.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (dist > 10) {
+            const speed = settings.speed;
+            const moveX = (dx / dist) * speed;
+            const moveY = (dy / dist) * speed;
+
             return {
               ...player,
-              x: player.x + (toBallX / dist) * speed,
-              y: player.y + (toBallY / dist) * speed,
-              vx: (toBallX / dist) * speed,
-              vy: (toBallY / dist) * speed
+              x: Math.max(20, Math.min(780, player.x + moveX)),
+              y: Math.max(20, Math.min(480, player.y + moveY)),
+              vx: moveX,
+              vy: moveY,
+              targetX,
+              targetY
             };
           }
-          
+
           return player;
         }
       }));
@@ -148,20 +222,23 @@ const Index = () => {
       setBall(prev => {
         let newX = prev.x + prev.vx;
         let newY = prev.y + prev.vy;
-        let newVx = prev.vx * 0.98;
-        let newVy = prev.vy * 0.98;
+        let newVx = prev.vx * 0.99;
+        let newVy = prev.vy * 0.99;
 
         if (newY <= 20 || newY >= 480) {
-          newVy = -newVy;
+          newVy = -newVy * 0.8;
           newY = Math.max(20, Math.min(480, newY));
         }
 
         if (newX <= 20) {
           if (newY > 200 && newY < 300) {
             setScore(s => ({ ...s, 'Преподаватели': s['Преподаватели'] + 1 }));
+            setTimeout(() => {
+              setBall({ x: 400, y: 250, vx: Math.random() * 2 - 1, vy: Math.random() * 2 - 1 });
+            }, 100);
             return { x: 400, y: 250, vx: 0, vy: 0 };
           } else {
-            newVx = -newVx;
+            newVx = -newVx * 0.8;
             newX = 20;
           }
         }
@@ -169,9 +246,12 @@ const Index = () => {
         if (newX >= 780) {
           if (newY > 200 && newY < 300) {
             setScore(s => ({ ...s, 'ГЕНГ БЕНГ': s['ГЕНГ БЕНГ'] + 1 }));
+            setTimeout(() => {
+              setBall({ x: 400, y: 250, vx: Math.random() * 2 - 1, vy: Math.random() * 2 - 1 });
+            }, 100);
             return { x: 400, y: 250, vx: 0, vy: 0 };
           } else {
-            newVx = -newVx;
+            newVx = -newVx * 0.8;
             newX = 780;
           }
         }
@@ -183,8 +263,16 @@ const Index = () => {
           
           if (dist < 25) {
             const angle = Math.atan2(dy, dx);
-            newVx = Math.cos(angle) * 4 + player.vx;
-            newVy = Math.sin(angle) * 4 + player.vy;
+            const kickPower = player.isUser ? 6 : (4 + settings.speed * 0.5);
+            
+            const oppGoalX = player.team === 'ГЕНГ БЕНГ' ? 780 : 20;
+            const oppGoalY = 250;
+            const toGoalAngle = Math.atan2(oppGoalY - player.y, oppGoalX - player.x);
+            
+            const finalAngle = player.isUser ? angle : (angle * 0.3 + toGoalAngle * 0.7 * settings.teamwork);
+            
+            newVx = Math.cos(finalAngle) * kickPower + player.vx * 0.3;
+            newVy = Math.sin(finalAngle) * kickPower + player.vy * 0.3;
           }
         });
 
@@ -193,7 +281,7 @@ const Index = () => {
     }, 1000 / 60);
 
     return () => clearInterval(gameLoop);
-  }, [gameState, players, ball]);
+  }, [gameState, players, ball, difficulty]);
 
   useEffect(() => {
     if (gameState !== 'playing') return;
@@ -272,8 +360,13 @@ const Index = () => {
 
   const handlePlayerSelect = (playerName: string) => {
     setSelectedPlayer(playerName);
-    if (selectedTeam) {
-      initGame(selectedTeam, playerName);
+    setGameState('difficulty-select');
+  };
+
+  const handleDifficultySelect = (diff: Difficulty) => {
+    setDifficulty(diff);
+    if (selectedTeam && selectedPlayer) {
+      initGame(selectedTeam, selectedPlayer);
       setGameState('playing');
     }
   };
@@ -366,6 +459,71 @@ const Index = () => {
     );
   }
 
+  if (gameState === 'difficulty-select') {
+    return (
+      <div className="min-h-screen bg-black text-white flex flex-col">
+        <div className="absolute top-8 left-8 text-sm tracking-wider">
+          ФУТБОЛЬНАЯ КОМАНДА
+        </div>
+        <div className="absolute top-8 right-8 text-2xl font-bold tracking-wider">
+          ГЕНГ БЕНГ
+        </div>
+        <div className="text-center mt-16 mb-8">
+          <div className="text-lg tracking-[0.3em]">ГЕНГ БЕНГ - 27.10.2025 - 30.10.2025</div>
+          <h1 className="text-5xl font-bold mt-4 mb-2">Уровень сложности</h1>
+          <p className="text-muted-foreground">Выберите уровень</p>
+        </div>
+
+        <div className="flex-1 flex items-center justify-center px-8 pb-16">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl w-full">
+            <Card
+              className="bg-card border-2 border-green-500/30 hover:border-green-500 transition-all duration-300 cursor-pointer p-8 hover:scale-105"
+              onClick={() => handleDifficultySelect('хуйня')}
+            >
+              <div className="text-center">
+                <Icon name="Smile" className="mx-auto mb-4 text-green-500" size={48} />
+                <h3 className="text-2xl font-bold mb-3">хуйня</h3>
+                <p className="text-sm text-muted-foreground mb-4">Медленные соперники, слабая командная игра</p>
+                <Button className="w-full bg-green-600 hover:bg-green-700">Выбрать</Button>
+              </div>
+            </Card>
+
+            <Card
+              className="bg-card border-2 border-yellow-500/30 hover:border-yellow-500 transition-all duration-300 cursor-pointer p-8 hover:scale-105"
+              onClick={() => handleDifficultySelect('бля ну будет трудно')}
+            >
+              <div className="text-center">
+                <Icon name="Meh" className="mx-auto mb-4 text-yellow-500" size={48} />
+                <h3 className="text-2xl font-bold mb-3">бля ну будет трудно</h3>
+                <p className="text-sm text-muted-foreground mb-4">Быстрые соперники, средняя тактика</p>
+                <Button className="w-full bg-yellow-600 hover:bg-yellow-700">Выбрать</Button>
+              </div>
+            </Card>
+
+            <Card
+              className="bg-card border-2 border-red-500/30 hover:border-red-500 transition-all duration-300 cursor-pointer p-8 hover:scale-105"
+              onClick={() => handleDifficultySelect('пиздец сложный')}
+            >
+              <div className="text-center">
+                <Icon name="Skull" className="mx-auto mb-4 text-red-500" size={48} />
+                <h3 className="text-2xl font-bold mb-3">пиздец сложный</h3>
+                <p className="text-sm text-muted-foreground mb-4">Профессионалы, идеальная командная игра</p>
+                <Button className="w-full bg-red-600 hover:bg-red-700">Выбрать</Button>
+              </div>
+            </Card>
+          </div>
+        </div>
+
+        <div className="text-center pb-8">
+          <Button variant="outline" onClick={() => setGameState('player-select')}>
+            <Icon name="ArrowLeft" className="mr-2" size={16} />
+            Назад к выбору игрока
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-black text-white flex flex-col">
       <div className="absolute top-8 left-8 text-sm tracking-wider z-10">
@@ -377,6 +535,7 @@ const Index = () => {
 
       <div className="text-center mt-16 mb-4">
         <div className="text-lg tracking-[0.3em]">ГЕНГ БЕНГ - 27.10.2025 - 30.10.2025</div>
+        <div className="text-sm text-muted-foreground mt-1">Сложность: {difficulty}</div>
       </div>
 
       <div className="flex items-center justify-center gap-12 mb-4">
