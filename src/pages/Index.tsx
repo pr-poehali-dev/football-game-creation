@@ -339,6 +339,19 @@ const Index = () => {
         ctx.arc(player.x, player.y, 20, 0, Math.PI * 2);
         ctx.stroke();
       }
+
+      ctx.font = '10px Roboto';
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 3;
+      const nameParts = player.name.split(' ');
+      const displayName = nameParts.length > 1 
+        ? `${nameParts[0][0]}. ${nameParts[1]}` 
+        : player.name;
+      ctx.strokeText(displayName, player.x, player.y + 22);
+      ctx.fillText(displayName, player.x, player.y + 22);
     });
 
     const ballGradient = ctx.createRadialGradient(ball.x - 3, ball.y - 3, 2, ball.x, ball.y, 12);
