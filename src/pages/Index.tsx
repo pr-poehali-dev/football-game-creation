@@ -35,7 +35,7 @@ interface Player {
   vx: number;
   vy: number;
   isUser: boolean;
-  role: 'defender' | 'midfielder' | 'attacker';
+  role: 'goalkeeper' | 'defender' | 'midfielder' | 'attacker';
   targetX?: number;
   targetY?: number;
 }
@@ -64,33 +64,43 @@ const Index = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const keysPressed = useRef<Set<string>>(new Set());
 
-  const assignRoles = (teamPlayers: string[]): ('defender' | 'midfielder' | 'attacker')[] => {
-    const roles: ('defender' | 'midfielder' | 'attacker')[] = [];
-    teamPlayers.forEach((_, idx) => {
-      if (idx < 2) roles.push('defender');
-      else if (idx < 5) roles.push('midfielder');
-      else roles.push('attacker');
-    });
-    return roles;
+  const assignRole = (name: string, team: TeamName): 'goalkeeper' | 'defender' | 'midfielder' | 'attacker' => {
+    if (team === 'ГЕНГ БЕНГ' && name === 'Стрелков Миша') return 'goalkeeper';
+    if (team === 'Преподаватели' && name === 'Николенко Евгений') return 'goalkeeper';
+    
+    const teamPlayers = teams[team];
+    const idx = teamPlayers.indexOf(name);
+    
+    if (idx < 2) return 'defender';
+    if (idx < 5) return 'midfielder';
+    return 'attacker';
   };
 
   const initGame = (team: TeamName, playerName: string) => {
     const allPlayers: Player[] = [];
-    const gbRoles = assignRoles(teams['ГЕНГ БЕНГ']);
-    const prepRoles = assignRoles(teams['Преподаватели']);
     
     teams['ГЕНГ БЕНГ'].forEach((name, idx) => {
-      const role = gbRoles[idx];
+      const role = assignRole(name, 'ГЕНГ БЕНГ');
       let baseX = 100;
-      if (role === 'midfielder') baseX = 250;
-      if (role === 'attacker') baseX = 350;
+      let baseY = 80 + (idx % 3) * 140 + Math.random() * 40;
+      
+      if (role === 'goalkeeper') {
+        baseX = 40;
+        baseY = 250;
+      } else if (role === 'defender') {
+        baseX = 120;
+      } else if (role === 'midfielder') {
+        baseX = 250;
+      } else if (role === 'attacker') {
+        baseX = 350;
+      }
       
       allPlayers.push({
         id: `gb-${idx}`,
         name,
         team: 'ГЕНГ БЕНГ',
-        x: baseX + (Math.random() - 0.5) * 60,
-        y: 80 + (idx % 3) * 140 + Math.random() * 40,
+        x: baseX + (role === 'goalkeeper' ? 0 : (Math.random() - 0.5) * 60),
+        y: baseY,
         vx: 0,
         vy: 0,
         isUser: team === 'ГЕНГ БЕНГ' && name === playerName,
@@ -99,17 +109,27 @@ const Index = () => {
     });
 
     teams['Преподаватели'].forEach((name, idx) => {
-      const role = prepRoles[idx];
+      const role = assignRole(name, 'Преподаватели');
       let baseX = 700;
-      if (role === 'midfielder') baseX = 550;
-      if (role === 'attacker') baseX = 450;
+      let baseY = 80 + (idx % 3) * 140 + Math.random() * 40;
+      
+      if (role === 'goalkeeper') {
+        baseX = 760;
+        baseY = 250;
+      } else if (role === 'defender') {
+        baseX = 680;
+      } else if (role === 'midfielder') {
+        baseX = 550;
+      } else if (role === 'attacker') {
+        baseX = 450;
+      }
       
       allPlayers.push({
         id: `prep-${idx}`,
         name,
         team: 'Преподаватели',
-        x: baseX + (Math.random() - 0.5) * 60,
-        y: 80 + (idx % 3) * 140 + Math.random() * 40,
+        x: baseX + (role === 'goalkeeper' ? 0 : (Math.random() - 0.5) * 60),
+        y: baseY,
         vx: 0,
         vy: 0,
         isUser: team === 'Преподаватели' && name === playerName,
@@ -174,7 +194,19 @@ const Index = () => {
           let targetX = player.x;
           let targetY = player.y;
 
-          if (distToBall < 150 * settings.reaction) {
+          if (player.role === 'goalkeeper') {
+            const goalX = player.team === 'ГЕНГ БЕНГ' ? 40 : 760;
+            const goalTop = 200;
+            const goalBottom = 300;
+            
+            if (distToBall < 200 && ((player.team === 'ГЕНГ БЕНГ' && ball.x < 250) || (player.team === 'Преподаватели' && ball.x > 550))) {
+              targetX = Math.max(30, Math.min(770, ball.x));
+              targetY = Math.max(goalTop, Math.min(goalBottom, ball.y));
+            } else {
+              targetX = goalX;
+              targetY = 250;
+            }
+          } else if (distToBall < 150 * settings.reaction) {
             targetX = ball.x;
             targetY = ball.y;
           } else {
@@ -319,7 +351,10 @@ const Index = () => {
 
     players.forEach(player => {
       const gradient = ctx.createRadialGradient(player.x, player.y - 5, 5, player.x, player.y - 5, 20);
-      if (player.team === 'ГЕНГ БЕНГ') {
+      if (player.role === 'goalkeeper') {
+        gradient.addColorStop(0, '#fbbf24');
+        gradient.addColorStop(1, '#f59e0b');
+      } else if (player.team === 'ГЕНГ БЕНГ') {
         gradient.addColorStop(0, '#0EA5E9');
         gradient.addColorStop(1, '#0369a1');
       } else {
